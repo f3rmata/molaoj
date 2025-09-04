@@ -65,16 +65,10 @@ message SubmitTaskReply {
     string task_id = 1;
     TaskStatus status = 2;
     google.protobuf.Timestamp submitted_at = 3;
-    // 如果 dispatcher 接受并马上下发到 worker，还可返回预计等待时间等元信息
-    int32 estimated_queue_ms = 4;
 }
 
 // GetTask 请求/回复
-message GetTaskRequest {
-    string task_id = 1;
-    // 可选：是否包含完整 stdout/stderr 内容（若输出大可能只返回 summary）
-    bool include_output = 2;
-}
+message GetTaskRequest { string task_id = 1; }
 
 message GetTaskReply {
     string task_id = 1;
@@ -88,7 +82,6 @@ message GetTaskReply {
     int64 cpu_time_ms = 7;
     int64 memory_kb = 8;
 
-    // 若输出太大，可返回指向对象存储的 URL 或 blob_id
     string stdout = 9;
     string stderr = 10;
 

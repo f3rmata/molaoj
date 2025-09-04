@@ -6,6 +6,7 @@ edition = "2024"
 anyhow = "1.0.99"
 async-stream = "0.3.6"
 lapin = "3.4.0"
+postgres = "0.19.10"
 prost = "0.14.1"
 prost-types = "0.14.1"
 serde = { version = "1.0.219", features = ["derive"] }
@@ -14,6 +15,7 @@ tokio-stream = "0.1.17"
 tonic = "0.14.2"
 tonic-prost = "0.14.2"
 tracing = { version = "0.1.41", features = ["async-await"] }
+uuid = { version = "1.18.1", features = ["v4"] }
 
 [build-dependencies]
 tonic-build = "0.14.2"
