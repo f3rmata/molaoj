@@ -1,0 +1,178 @@
+syntax = "proto3";
+
+package task.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/any.proto";
+
+// 服务（Dispatcher）暴露给前端/客户端
+service JudgeDispatcher {
+    // 提交一个新的评测任务（异步）。返回 task_id 与初始状态。
+    rpc SubmitTask(SubmitTaskRequest) returns (SubmitTaskReply);
+
+    // 提交并阻塞直到任务完成或超时
+    // （server stream 用于发送中间状态与最终结果）
+    rpc SubmitTaskAndWait(SubmitTaskRequest) returns (stream TaskEvent);
+
+    // 查询某个任务的最新状态与结果
+    rpc GetTask(GetTaskRequest) returns (GetTaskReply);
+
+    // 取消正在排队或执行中的任务
+    rpc CancelTask(CancelTaskRequest) returns (CancelTaskReply);
+
+    // 分页列出某用户/项目的任务（按时间或 id 排序）
+    rpc ListTasks(ListTasksRequest) returns (ListTasksReply);
+
+    // 服务端推送：可选双向流用于即时事件/进度更新（例如 WS 替代）
+    rpc TaskEvents(stream TaskEventsRequest) returns (stream TaskEvent);
+}
+
+message SubmitTaskRequest {
+    // 运行语言/环境标识（例如: "rust:1.70", "cpp:gnu:11", "custom_image:tag"）
+    string runtime = 1;
+
+    string code = 2;
+
+    // 编译/运行命令（覆盖默认）
+    repeated string compile_cmd = 3;
+    repeated string run_cmd = 4;
+
+    string stdin = 5;
+
+    // 运行/编译资源限制（ms, KB）
+    int32 time_limit_ms = 6;
+    int32 memory_limit_kb = 7;
+
+    // 环境变量
+    map<string, string> env = 8;
+
+    // 最大输出截断长度（字节），超出会被截断或上传到对象存储
+    int32 max_output_bytes = 9;
+
+    // 用户/项目元信息
+    string user_id = 10;
+
+    // 任务优先级（0=normal, >0 higher）
+    int32 priority = 11;
+
+    // 可扩展字段：用于传递自定义选项（例如 judge policies），使用 Any
+    // 以便兼容未来扩展
+    google.protobuf.Any options = 12;
+}
+
+// SubmitTask 的回复（立即返回）
+message SubmitTaskReply {
+    string task_id = 1;
+    TaskStatus status = 2;
+    google.protobuf.Timestamp submitted_at = 3;
+    // 如果 dispatcher 接受并马上下发到 worker，还可返回预计等待时间等元信息
+    int32 estimated_queue_ms = 4;
+}
+
+// GetTask 请求/回复
+message GetTaskRequest {
+    string task_id = 1;
+    // 可选：是否包含完整 stdout/stderr 内容（若输出大可能只返回 summary）
+    bool include_output = 2;
+}
+
+message GetTaskReply {
+    string task_id = 1;
+    TaskStatus status = 2; // queued/running/done/failed/cancelled
+    google.protobuf.Timestamp submitted_at = 3;
+    google.protobuf.Timestamp started_at = 4;
+    google.protobuf.Timestamp finished_at = 5;
+
+    // 运行结果
+    int32 exit_code = 6;
+    int64 cpu_time_ms = 7;
+    int64 memory_kb = 8;
+
+    // 若输出太大，可返回指向对象存储的 URL 或 blob_id
+    string stdout = 9;
+    string stderr = 10;
+
+    // 编译错误/运行错误摘要
+    string message = 11;
+
+    // 可扩展的元数据
+    map<string, string> metadata = 12;
+}
+
+// 取消任务
+message CancelTaskRequest {
+    string task_id = 1;
+    string user_id = 2; // 验证用户是否可取消
+}
+
+message CancelTaskReply {
+    string task_id = 1;
+    bool cancelled = 2;
+    string reason = 3;
+}
+
+// 列表/分页 API
+message ListTasksRequest {
+    string user_id = 1;
+    int32 page_size = 2;
+    string page_token = 3; // 用于分页
+    // 过滤器（status、runtime、时间窗口等）
+    repeated TaskStatusFilter status_filters = 4;
+    google.protobuf.Timestamp created_after = 5;
+    google.protobuf.Timestamp created_before = 6;
+    // 排序：created_at / finished_at 等（默认 desc created_at）
+    string order_by = 7;
+}
+
+message TaskStatusFilter { TaskStatus status = 1; }
+
+message ListTasksReply {
+    repeated TaskSummary tasks = 1;
+    string next_page_token = 2;
+}
+
+message TaskSummary {
+    string task_id = 1;
+    TaskStatus status = 2;
+    google.protobuf.Timestamp submitted_at = 3;
+    google.protobuf.Timestamp finished_at = 4;
+    string runtime = 5;
+    string message = 6;
+}
+
+// 事件模型（用于 SubmitTaskAndWait / TaskEvents 等）
+message TaskEvent {
+    string task_id = 1;
+    oneof payload {
+        TaskStatus status = 2;
+        GetTaskReply result = 3;
+        // 可加入自定义事件
+        google.protobuf.Any custom = 4;
+    }
+    google.protobuf.Timestamp time = 5;
+}
+
+// TaskEvents 双向流的客户端请求（可用来订阅/退订多个任务）
+message TaskEventsRequest {
+    // subscribe / unsubscribe / heartbeat 等操作
+    enum Action {
+        SUBSCRIBE = 0;
+        UNSUBSCRIBE = 1;
+        HEARTBEAT = 2;
+    }
+    Action action = 1;
+    repeated string task_ids = 2;
+    string client_id = 3;
+}
+
+// 任务状态枚举
+enum TaskStatus {
+    TASK_STATUS_UNSPECIFIED = 0;
+    QUEUED = 1;
+    RUNNING = 2;
+    SUCCEEDED = 3;
+    FAILED = 4;
+    CANCELLED = 5;
+    TIMEOUT = 6;
+    RUNTIME_ERROR = 7;
+}
