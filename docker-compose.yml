@@ -1,1 +1,31 @@
 # TODO: add docker config for dispatcher, worker, rabbitmq and postgresql instances
+# ENV: AMQP_ADDR (default: amqp://rmq:rmq@127.0.0.1:5672/%2f)
+#      AMQP_TASK_QUEUE (default: tasks.submit)
+#      PG_DSN or DATABASE_URL (default: postgres://postgres:postgres@127.0.0.1:5432/molaoj)
+
+services:
+  mq_server:
+    image: rabbitmq:4-management
+    container_name: "rabbitmq"
+    ports:
+      - 5672:5672
+      - 15672:15672
+    restart: unless-stopped
+    volumes:
+      - mqdata:/var/lib/rabbitmq
+
+  pq_server:
+    image: postgres
+    container_name: "postgresql"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: molaoj
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  mqdata:
+  pgdata:

@@ -1,7 +1,7 @@
 use futures_lite::stream::StreamExt;
-use lapin::{
-    BasicProperties, Connection, ConnectionProperties, ExchangeKind, options::*, types::FieldTable,
-};
+use lapin::{Connection, ConnectionProperties, types::FieldTable};
+
+mod sandbox_builder;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
@@ -23,10 +23,10 @@ async fn main() -> Result<(), anyhow::Error> {
 
     while let Some(delivery) = consumer.next().await {
         match delivery {
-            Ok(delivery) => {
-                let msg = String::from_utf8(delivery.data).unwrap();
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("{}", e)
             }
-            Err(e) => {}
         }
     }
 

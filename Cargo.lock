@@ -1434,11 +1434,12 @@ dependencies = [
  "anyhow",
  "async-stream",
  "lapin",
- "postgres",
  "prost",
  "prost-types",
  "serde",
+ "serde_json",
  "tokio",
+ "tokio-postgres",
  "tokio-stream",
  "tonic",
  "tonic-build",
@@ -1740,20 +1741,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "postgres"
-version = "0.19.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "363e6dfbdd780d3aa3597b6eb430db76bb315fa9bad7fae595bb8def808b8470"
-dependencies = [
- "bytes",
- "fallible-iterator",
- "futures-util",
- "log",
- "tokio",
- "tokio-postgres",
-]
-
-[[package]]
 name = "postgres-protocol"
 version = "0.6.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1780,6 +1767,8 @@ dependencies = [
  "bytes",
  "fallible-iterator",
  "postgres-protocol",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
