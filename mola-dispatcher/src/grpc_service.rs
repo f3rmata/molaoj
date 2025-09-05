@@ -8,7 +8,7 @@ use tokio_stream::{Stream, wrappers::ReceiverStream};
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
-use crate::Task;
+use crate::{CompileSettings, Task};
 
 pub mod judgedispatcher {
     tonic::include_proto!("task.v1");
@@ -32,7 +32,6 @@ fn get_timestamp(st: SystemTime) -> Timestamp {
 pub struct TaskEntry {
     // broadcast sender 用于向多个订阅者发布日志/状态；sender.clone().subscribe() 用于创建 Receiver
     notifier: broadcast::Sender<TaskEvent>,
-    status: Arc<Mutex<TaskStatus>>,
     task: Task,
 }
 
@@ -58,11 +57,7 @@ impl JudgeDispatcher for GRPCService {
         let req_body = request.into_inner();
         let submitted_at = Some(get_timestamp(SystemTime::now()));
 
-        let task_req = Task {
-            submitted_at,
-            task_id: task_id.clone(),
-            user_id: req_body.user_id,
-            priority: req_body.priority,
+        let compile_settings = CompileSettings {
             code: req_body.code,
             compile_cmd: req_body.compile_cmd,
             run_cmd: req_body.run_cmd,
@@ -71,7 +66,16 @@ impl JudgeDispatcher for GRPCService {
             time_limit_ms: req_body.time_limit_ms,
             memory_limit_kb: req_body.memory_limit_kb,
             max_output_bytes: req_body.max_output_bytes,
+        };
+
+        let task_req = Task {
+            submitted_at,
+            compile_settings,
             status: TaskStatus::Queued,
+            compile_result: None,
+            task_id: task_id.clone(),
+            user_id: req_body.user_id,
+            priority: req_body.priority,
             started_at: None,
             finished_at: None,
         };
@@ -80,9 +84,11 @@ impl JudgeDispatcher for GRPCService {
         let (tx, _rx) = broadcast::channel(128);
         let entry = TaskEntry {
             notifier: tx.clone(),
-            status: Arc::new(Mutex::new(TaskStatus::Queued)),
             task: task_req,
         };
+
+        let mut map = self.state.tasks.lock().await;
+        map.insert(task_id.clone(), entry);
 
         let _ = self
             .state
@@ -96,6 +102,7 @@ impl JudgeDispatcher for GRPCService {
             submitted_at,
             status: TaskStatus::Queued.into(),
         };
+
         Ok(Response::new(reply))
     }
 
@@ -109,16 +116,96 @@ impl JudgeDispatcher for GRPCService {
 
     async fn get_task(
         &self,
-        _request: Request<GetTaskRequest>,
+        request: Request<GetTaskRequest>,
     ) -> Result<Response<GetTaskReply>, Status> {
-        unimplemented!()
+        let req_body = request.into_inner();
+        let task_id = req_body.task_id;
+
+        // 取出并克隆条目，避免长时间持有 tasks 锁
+        let entry = {
+            let map = self.state.tasks.lock().await;
+            map.get(&task_id).cloned()
+        }
+        .ok_or_else(|| Status::not_found(format!("task {} not found", task_id)))?;
+
+        let t = entry.task;
+        let compile_result = t.compile_result.unwrap_or_default();
+
+        let reply = GetTaskReply {
+            task_id: t.task_id,
+            status: t.status.into(),
+            submitted_at: t.submitted_at,
+            started_at: t.started_at,
+            finished_at: t.finished_at,
+            exit_code: compile_result.exit_code,
+            cpu_time_ms: compile_result.cpu_time_ms,
+            memory_kb: compile_result.memory_kb,
+            stdout: compile_result.stdout,
+            stderr: compile_result.stderr,
+            message: compile_result.message,
+            metadata: Default::default(),
+        };
+
+        Ok(Response::new(reply))
     }
 
+    // need test!
     async fn cancel_task(
         &self,
-        _request: Request<CancelTaskRequest>,
+        request: Request<CancelTaskRequest>,
     ) -> Result<Response<CancelTaskReply>, Status> {
-        unimplemented!()
+        let req_body = request.into_inner();
+
+        let task_id = req_body.task_id.clone();
+        let user_id = req_body.user_id;
+
+        // 取出并克隆条目，避免长时间持有 tasks 锁
+        let mut map = self.state.tasks.lock().await;
+        let entry = match map.get_mut(&task_id) {
+            Some(e) => e,
+            None => return Err(Status::not_found(format!("task {} not found", task_id))),
+        };
+
+        // 简单的权限校验：必须为提交者本人
+        if !entry.task.user_id.is_empty() && entry.task.user_id != user_id {
+            return Err(Status::permission_denied("not allowed to cancel this task"));
+        }
+
+        // 锁定状态并判断可否取消
+        let st = &mut entry.task.status;
+        match *st {
+            TaskStatus::Queued | TaskStatus::Running => {
+                // 状态转为 CANCELLED，并标记完成时间
+                *st = TaskStatus::Cancelled;
+                entry.task.finished_at = Some(get_timestamp(SystemTime::now()));
+
+                // 复制必要对象，释放 map 锁后再广播
+                let tx = entry.notifier.clone();
+
+                // 广播取消事件（忽略没有订阅者的错误）
+                let _ = tx.send(TaskEvent {
+                    task_id: task_id.clone(),
+                    payload: Some(judgedispatcher::task_event::Payload::Status(
+                        TaskStatus::Cancelled.into(),
+                    )),
+                    time: Some(get_timestamp(SystemTime::now())),
+                });
+
+                Ok(Response::new(CancelTaskReply {
+                    task_id,
+                    cancelled: true,
+                    reason: String::from("User cancelled."),
+                }))
+            }
+            _ => {
+                // 已经结束或已取消
+                Ok(Response::new(CancelTaskReply {
+                    task_id,
+                    cancelled: false,
+                    reason: "task already finished".to_string(),
+                }))
+            }
+        }
     }
 
     async fn list_tasks(

@@ -7,6 +7,7 @@ a super simple and fast oj system.
 - 完整实现 grpc 调用函数
 - 实现 rabbitmq 消息推送函数
 - 实现 rabbitmq 消息消耗函数
+- 添加判题功能 (proto, grpc_service...)
 - 实现 worker 评测功能
 - 为 worker 添加 docker 和 nsjail 隔离
 - 使用 k8s 等工具为 worker 实现动态扩容
