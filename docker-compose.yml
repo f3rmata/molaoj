@@ -1,1 +1,1 @@
-# TODO: add dispatcher, rabbitmq, worker docker config here.
+# TODO: add docker config for dispatcher, worker, rabbitmq and postgresql
