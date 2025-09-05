@@ -1456,6 +1456,8 @@ dependencies = [
  "anyhow",
  "futures-lite",
  "lapin",
+ "serde",
+ "serde_json",
  "tokio",
 ]
 
