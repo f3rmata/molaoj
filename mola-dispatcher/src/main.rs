@@ -1,4 +1,4 @@
-use mola_dispatcher::grpc_service::AppState;
+use mola_dispatcher::AppState;
 use mola_dispatcher::grpc_service::GRPCService;
 use mola_dispatcher::grpc_service::judgedispatcher::judge_dispatcher_server::JudgeDispatcherServer;
 
@@ -8,7 +8,7 @@ use tokio::sync::{Mutex, mpsc};
 use tonic::transport::Server;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), anyhow::Error> {
     let (tx, rx) = mpsc::channel::<String>(128);
     let state = AppState {
         tasks: Arc::new(Mutex::new(HashMap::new())),

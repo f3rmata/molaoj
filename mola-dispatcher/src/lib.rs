@@ -1,6 +1,9 @@
+pub mod dispatcher;
 pub mod grpc_service;
 
 use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::{Mutex, broadcast, mpsc};
 
 #[derive(Debug, Clone)]
 struct CompileSettings {
@@ -37,4 +40,16 @@ pub struct Task {
     finished_at: Option<prost_types::Timestamp>,
 }
 
-impl Task {}
+#[derive(Debug, Clone)]
+pub struct TaskEntry {
+    // broadcast sender 用于向多个订阅者发布日志/状态；sender.clone().subscribe() 用于创建 Receiver
+    notifier: broadcast::Sender<grpc_service::judgedispatcher::TaskEvent>,
+    task: Task,
+}
+
+#[derive(Debug, Clone)]
+pub struct AppState {
+    // 将任务 id 映射到 TaskEntry
+    pub tasks: Arc<Mutex<HashMap<String, TaskEntry>>>,
+    pub queue_tx: mpsc::Sender<String>,
+}

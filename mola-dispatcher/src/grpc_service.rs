@@ -1,14 +1,12 @@
 use prost_types::Timestamp;
-use std::collections::HashMap;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::sync::{Mutex, broadcast, mpsc};
+use tokio::sync::broadcast;
 use tokio_stream::{Stream, wrappers::ReceiverStream};
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
-use crate::{CompileSettings, Task};
+use crate::{AppState, CompileSettings, Task, TaskEntry};
 
 pub mod judgedispatcher {
     tonic::include_proto!("task.v1");
@@ -26,20 +24,6 @@ fn get_timestamp(st: SystemTime) -> Timestamp {
         seconds: dur.as_secs() as i64,
         nanos: dur.subsec_nanos() as i32,
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct TaskEntry {
-    // broadcast sender 用于向多个订阅者发布日志/状态；sender.clone().subscribe() 用于创建 Receiver
-    notifier: broadcast::Sender<TaskEvent>,
-    task: Task,
-}
-
-#[derive(Debug, Clone)]
-pub struct AppState {
-    // 将任务 id 映射到 TaskEntry
-    pub tasks: Arc<Mutex<HashMap<String, TaskEntry>>>,
-    pub queue_tx: mpsc::Sender<String>,
 }
 
 #[derive(Debug)]
@@ -149,7 +133,7 @@ impl JudgeDispatcher for GRPCService {
         Ok(Response::new(reply))
     }
 
-    // need test!
+    // TODO: need test!
     async fn cancel_task(
         &self,
         request: Request<CancelTaskRequest>,
