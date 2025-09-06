@@ -17,8 +17,8 @@ pub struct TaskMsg {
 #[derive(Debug, Deserialize)]
 pub struct Settings {
     code: String,
-    compile_cmd: Vec<String>,
-    run_cmd: Vec<String>,
+    pub compile_cmd: Vec<String>,
+    pub run_cmd: Vec<String>,
     pub stdin: String,
     env: HashMap<String, String>,
     pub time_limit_ms: u32,
@@ -55,6 +55,7 @@ pub async fn nsjail_builder(
 > {
     let task: TaskMsg = serde_json::from_slice(payload)?;
     info!("received task: {}", task.task_id);
+    debug!("task: {:?}", task);
 
     let work_dir = std::env::temp_dir().join(format!("molaworker-{}", &task.task_id));
 
@@ -73,20 +74,22 @@ pub async fn nsjail_builder(
     envs.insert("TASK_CODE_PATH".into(), code_file.to_string_lossy().into());
     envs.insert("TASK_WORK_DIR".into(), work_dir.to_string_lossy().into());
 
+    debug!("task compile: {:?}", task.settings.compile_cmd);
     let base_compile_cmd = normalize_cmd(&task.settings.compile_cmd);
     let base_run_cmd = normalize_cmd(&task.settings.run_cmd);
 
     let mut compile_cmd = Vec::new();
+    debug!("base compile: {:?}", base_compile_cmd);
     compile_cmd.extend(base_compile_cmd.iter().cloned());
     compile_cmd.extend(code_path_vec.iter().cloned());
 
-    info!("compile: {:?}", compile_cmd);
+    info!("compile_cmd: {:?}", compile_cmd);
 
     let mut run_cmd = Vec::new();
     run_cmd.extend(base_run_cmd.iter().cloned());
-    run_cmd.extend(code_path_vec.iter().cloned());
+    // run_cmd.extend(code_path_vec.iter().cloned());
 
-    info!("run: {:?}", run_cmd);
+    info!("run_cmd: {:?}", run_cmd);
 
     Ok((task, envs, work_dir, compile_cmd, run_cmd))
 }

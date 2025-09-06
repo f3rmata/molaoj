@@ -8,10 +8,9 @@ use lapin::{
     types::FieldTable,
 };
 use log::{error, info};
-use sandbox_builder::{nsjail_builder, sandbox_run};
-use std::time::Duration;
 
 mod sandbox_builder;
+mod worker;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
@@ -60,12 +59,12 @@ async fn main() -> Result<(), anyhow::Error> {
             Ok(delivery) => {
                 // let tag = delivery.delivery_tag;
                 let data = delivery.data.clone();
-                match handle_delivery(&data).await {
+                match worker::handle_delivery(&data).await {
                     Ok(()) => {
                         delivery.ack(BasicAckOptions::default()).await?;
                     }
                     Err(e) => {
-                        error!("task handle error: {e:#}");
+                        error!("sandbox run error: {e:#}");
                         // 根据需要选择是否重回队列；这里保守重试
                         delivery
                             .nack(BasicNackOptions {
@@ -85,67 +84,5 @@ async fn main() -> Result<(), anyhow::Error> {
 
     channel.close(200, "Bye").await.ok();
     conn.close(200, "Bye").await.ok();
-    Ok(())
-}
-
-async fn handle_delivery(payload: &[u8]) -> anyhow::Result<()> {
-    let (task, envs, work_dir, compile_cmd, run_cmd) = nsjail_builder(payload).await?;
-
-    // 执行编译（可选）
-    if let Some(first) = compile_cmd.first() {
-        if !first.is_empty() {
-            info!("compiling...");
-            let (status, stdout, stderr) = sandbox_run(
-                &compile_cmd,
-                &envs,
-                &work_dir,
-                None,
-                Duration::from_millis(task.settings.time_limit_ms as u64),
-                task.settings.max_output_bytes as usize,
-            )
-            .await?;
-            info!(
-                "\n[compile] exit={} stdout(len={}):\n{}\n[compile] stderr(len={}):\n{}",
-                status.code().unwrap_or(-1),
-                stdout.len(),
-                stdout,
-                stderr.len(),
-                stderr
-            );
-            if !status.success() {
-                // 编译失败即结束
-                return Ok(());
-            }
-        } else {
-            info!("no compile_cmd given, skipping compiling...");
-        }
-    }
-
-    // 运行
-    if let Some(first) = run_cmd.first() {
-        if first.is_empty() {
-            info!("running...");
-            let (status, stdout, stderr) = sandbox_run(
-                &run_cmd,
-                &envs,
-                &work_dir,
-                Some(task.settings.stdin.as_bytes()),
-                Duration::from_millis(task.settings.time_limit_ms as u64),
-                task.settings.max_output_bytes as usize,
-            )
-            .await?;
-            info!(
-                "\n[run] exit={} stdout(len={}):\n{}\n[run] stderr(len={}):\n{}",
-                status.code().unwrap_or(-1),
-                stdout.len(),
-                stdout,
-                stderr.len(),
-                stderr
-            );
-        } else {
-            info!("no run_cmd given, skipping running...");
-        }
-    }
-
     Ok(())
 }
