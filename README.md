@@ -2,6 +2,27 @@
 
 a super simple and fast oj system.
 
+## Basic Usage
+
+1. 使用 cargo 工具启动 mola-dispatcher 和 mola-worker
+
+``` shell
+cargo run --bin mola-dispatcher 
+cargo run --bin mola-worker 
+```
+
+1. 使用 docker compose 工具启动 rabbitmq 和 postgresql 服务
+
+``` shell
+docker compose up
+```
+
+1. 使用 grpcurl 工具测试功能
+
+``` shell
+grpcurl -plaintext -import-path proto -proto proto/task.proto -d '{"runtime": "bash","code": "/usr/bin/echo hello", "compile_cmd": "", "run_cmd": "/usr/bin/bash","timeLimitMs": 2000,"memoryLimitKb": 262144,"userId": "user-123"}' localhost:50051 task.v1.JudgeDispatcher/SubmitTask
+```
+
 ## TODO
 
 - 完整实现 grpc 调用函数

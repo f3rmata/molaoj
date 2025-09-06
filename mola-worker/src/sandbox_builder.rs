@@ -1,12 +1,94 @@
+use log::{debug, info};
+use serde::Deserialize;
 use std::{collections::HashMap, path::PathBuf, time::Duration};
 use tokio::{
+    fs,
     io::{AsyncReadExt, AsyncWriteExt},
     process::Command,
     time::timeout,
 };
 
-fn nsjail_builder() -> Result<(), anyhow::Error> {
+#[derive(Debug, Deserialize)]
+pub struct TaskMsg {
+    pub task_id: String,
+    pub settings: Settings,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Settings {
+    code: String,
+    compile_cmd: Vec<String>,
+    run_cmd: Vec<String>,
+    pub stdin: String,
+    env: HashMap<String, String>,
+    pub time_limit_ms: u32,
+    pub memory_limit_kb: u32,
+    pub max_output_bytes: u32,
+}
+
+fn normalize_cmd(cmd: &[String]) -> Vec<String> {
+    cmd.iter()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .collect()
+}
+
+async fn write_code_file(path: &PathBuf, content: &str) -> anyhow::Result<()> {
+    let mut f = fs::File::create(path).await?;
+    f.write_all(content.as_bytes()).await?;
     Ok(())
+}
+
+// TODO: add nsjail wrpper cmd
+pub async fn nsjail_builder(
+    payload: &[u8],
+) -> Result<
+    (
+        TaskMsg,
+        HashMap<String, String>,
+        PathBuf,
+        Vec<String>,
+        Vec<String>,
+    ),
+    anyhow::Error,
+> {
+    let task: TaskMsg = serde_json::from_slice(payload)?;
+    info!("received task: {}", task.task_id);
+
+    let work_dir = std::env::temp_dir().join(format!("molaworker-{}", &task.task_id));
+
+    fs::create_dir_all(&work_dir).await?;
+
+    // 将代码写入文件；不知道语言时，用通用后缀
+    let code_file = work_dir.join("code.src");
+    let code_path_vec: Vec<String> = vec![code_file.to_string_lossy().into()];
+    write_code_file(&code_file, &task.settings.code).await?;
+
+    debug!("work_dir: {}", work_dir.to_str().unwrap_or_default());
+    debug!("code_dir: {}", code_file.to_str().unwrap_or_default());
+
+    // 统一的环境变量 + 用户自定义 env
+    let mut envs = task.settings.env.clone();
+    envs.insert("TASK_CODE_PATH".into(), code_file.to_string_lossy().into());
+    envs.insert("TASK_WORK_DIR".into(), work_dir.to_string_lossy().into());
+
+    let base_compile_cmd = normalize_cmd(&task.settings.compile_cmd);
+    let base_run_cmd = normalize_cmd(&task.settings.run_cmd);
+
+    let mut compile_cmd = Vec::new();
+    compile_cmd.extend(base_compile_cmd.iter().cloned());
+    compile_cmd.extend(code_path_vec.iter().cloned());
+
+    info!("compile: {:?}", compile_cmd);
+
+    let mut run_cmd = Vec::new();
+    run_cmd.extend(base_run_cmd.iter().cloned());
+    run_cmd.extend(code_path_vec.iter().cloned());
+
+    info!("run: {:?}", run_cmd);
+
+    Ok((task, envs, work_dir, compile_cmd, run_cmd))
 }
 
 // TODO: add sandbox feature
