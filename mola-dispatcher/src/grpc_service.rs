@@ -41,6 +41,12 @@ impl JudgeDispatcher for GRPCService {
         let req_body = request.into_inner();
         let submitted_at = Some(get_timestamp(SystemTime::now()));
 
+        // TODO: 为请求添加默认值
+        let max_output_bytes = match req_body.max_output_bytes {
+            0 => 16384,
+            _ => req_body.max_output_bytes,
+        };
+
         let compile_settings = CompileSettings {
             code: req_body.code,
             compile_cmd: req_body.compile_cmd,
@@ -49,7 +55,7 @@ impl JudgeDispatcher for GRPCService {
             env: req_body.env,
             time_limit_ms: req_body.time_limit_ms,
             memory_limit_kb: req_body.memory_limit_kb,
-            max_output_bytes: req_body.max_output_bytes,
+            max_output_bytes,
         };
 
         let task_req = Task {

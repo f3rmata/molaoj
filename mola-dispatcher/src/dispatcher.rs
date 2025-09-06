@@ -11,21 +11,6 @@ use crate::{AppState, Task};
 
 // NOTE: 将任务序列化为 JSON，用于 MQ 发送或 PG JSON 列
 fn task_to_json(task: &Task) -> Value {
-    // 将 TaskStatus 枚举转换成字符串（与 proto 枚举一致的大写风格）
-    fn status_to_str(s: &crate::grpc_service::judgedispatcher::TaskStatus) -> &'static str {
-        use crate::grpc_service::judgedispatcher::TaskStatus as S;
-        match s {
-            S::Unspecified => "TASK_STATUS_UNSPECIFIED",
-            S::Queued => "QUEUED",
-            S::Running => "RUNNING",
-            S::Succeeded => "SUCCEEDED",
-            S::Failed => "FAILED",
-            S::Cancelled => "CANCELLED",
-            S::Timeout => "TIMEOUT",
-            S::RuntimeError => "RUNTIME_ERROR",
-        }
-    }
-
     let settings = json!({
         "code": task.compile_settings.code,
         "compile_cmd": task.compile_settings.compile_cmd,
@@ -39,12 +24,6 @@ fn task_to_json(task: &Task) -> Value {
 
     json!({
         "task_id": task.task_id,
-        "user_id": task.user_id,
-        "priority": task.priority,
-        "status": status_to_str(&task.status),
-        "submitted_at": task.submitted_at.unwrap_or_default().to_string(),
-        "started_at": task.started_at.unwrap_or_default().to_string(),
-        "finished_at": task.finished_at.unwrap_or_default().to_string(),
         "settings": settings
     })
 }
